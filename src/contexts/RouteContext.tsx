@@ -1,13 +1,23 @@
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
+import { RoutingService } from '../services/routingService';
+
+interface RouteInfo {
+  coordinates: [number, number][];
+  distance: number;
+  duration: number;
+}
 
 interface RouteContextType {
   startLocation: string;
   endLocation: string;
-  route: [number, number][];
+  route: RouteInfo | null;
+  isCalculating: boolean;
+  error: string | null;
   setStartLocation: (location: string) => void;
   setEndLocation: (location: string) => void;
-  calculateRoute: (start: string, end: string) => void;
+  calculateRoute: (start: string, end: string) => Promise<void>;
+  clearRoute: () => void;
 }
 
 const RouteContext = createContext<RouteContextType | undefined>(undefined);
@@ -27,73 +37,81 @@ interface RouteProviderProps {
 export const RouteProvider = ({ children }: RouteProviderProps) => {
   const [startLocation, setStartLocation] = useState('');
   const [endLocation, setEndLocation] = useState('');
-  const [route, setRoute] = useState<[number, number][]>([]);
+  const [route, setRoute] = useState<RouteInfo | null>(null);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const calculateRoute = async (start: string, end: string) => {
-    console.log('Calculating route from', start, 'to', end);
+    if (!start || !end) {
+      setError('Both start and end locations are required');
+      return;
+    }
+
+    setIsCalculating(true);
+    setError(null);
     
-    // For demo purposes, create a simple route between two points
-    // In a real app, you'd use a routing service like OSRM
     try {
-      const startCoords = await geocodeLocation(start);
-      const endCoords = await geocodeLocation(end);
+      console.log('Calculating route from', start, 'to', end);
       
-      if (startCoords && endCoords) {
-        // Simple straight line route for demo
-        const routePoints: [number, number][] = [
-          startCoords,
-          // Add some intermediate points for a more realistic route
-          [
-            (startCoords[0] + endCoords[0]) / 2 + (Math.random() - 0.5) * 0.01,
-            (startCoords[1] + endCoords[1]) / 2 + (Math.random() - 0.5) * 0.01
-          ],
-          endCoords
-        ];
-        
-        setRoute(routePoints);
-        
-        // Store route in localStorage for offline access
-        localStorage.setItem('ecomap-route', JSON.stringify({
-          start,
-          end,
-          route: routePoints,
-          timestamp: Date.now()
-        }));
+      // Geocode both locations
+      const startCoords = await RoutingService.geocodeLocation(start);
+      const endCoords = await RoutingService.geocodeLocation(end);
+      
+      if (!startCoords) {
+        throw new Error(`Could not find location: ${start}`);
       }
+      
+      if (!endCoords) {
+        throw new Error(`Could not find location: ${end}`);
+      }
+      
+      // Calculate route
+      const routeData = await RoutingService.calculateRoute(startCoords, endCoords);
+      
+      if (!routeData) {
+        throw new Error('Could not calculate route');
+      }
+      
+      setRoute(routeData);
+      
+      // Store route in localStorage for offline access
+      localStorage.setItem('ecomap-current-route', JSON.stringify({
+        start,
+        end,
+        startCoords,
+        endCoords,
+        route: routeData,
+        timestamp: Date.now()
+      }));
+      
+      console.log('Route calculated successfully:', routeData);
+      
     } catch (error) {
       console.error('Error calculating route:', error);
+      setError(error instanceof Error ? error.message : 'Failed to calculate route');
       
       // Try to load from cache if online request fails
-      const cachedRoute = localStorage.getItem('ecomap-route');
+      const cachedRoute = localStorage.getItem('ecomap-current-route');
       if (cachedRoute) {
-        const parsed = JSON.parse(cachedRoute);
-        setRoute(parsed.route);
+        try {
+          const parsed = JSON.parse(cachedRoute);
+          if (parsed.route) {
+            setRoute(parsed.route);
+            setError('Using cached route (offline)');
+          }
+        } catch (e) {
+          console.error('Failed to parse cached route:', e);
+        }
       }
+    } finally {
+      setIsCalculating(false);
     }
   };
 
-  const geocodeLocation = async (location: string): Promise<[number, number] | null> => {
-    // Simple geocoding - in a real app, use a proper geocoding service
-    // For now, check if it's already coordinates
-    const coordMatch = location.match(/([-+]?\d*\.?\d+),\s*([-+]?\d*\.?\d+)/);
-    if (coordMatch) {
-      return [parseFloat(coordMatch[1]), parseFloat(coordMatch[2])];
-    }
-    
-    // Mock geocoding for common cities
-    const cityCoords: Record<string, [number, number]> = {
-      'new york': [40.7128, -74.0060],
-      'boston': [42.3601, -71.0589],
-      'philadelphia': [39.9526, -75.1652],
-      'washington': [38.9072, -77.0369],
-      'miami': [25.7617, -80.1918],
-      'chicago': [41.8781, -87.6298],
-      'los angeles': [34.0522, -118.2437],
-      'san francisco': [37.7749, -122.4194],
-    };
-    
-    const normalized = location.toLowerCase().trim();
-    return cityCoords[normalized] || null;
+  const clearRoute = () => {
+    setRoute(null);
+    setError(null);
+    localStorage.removeItem('ecomap-current-route');
   };
 
   return (
@@ -101,9 +119,12 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
       startLocation,
       endLocation,
       route,
+      isCalculating,
+      error,
       setStartLocation,
       setEndLocation,
-      calculateRoute
+      calculateRoute,
+      clearRoute
     }}>
       {children}
     </RouteContext.Provider>
