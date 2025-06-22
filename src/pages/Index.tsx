@@ -1,10 +1,11 @@
 
 import React, { useEffect, useState } from 'react';
 import MapContainer from '../components/MapContainer';
-import NavigationPanel from '../components/NavigationPanel';
+import MainNavigationPanel from '../components/NavigationPanel';
 import OfflineIndicator from '../components/OfflineIndicator';
 import Header from '../components/Header';
 import { RouteProvider } from '../contexts/RouteContext';
+import { NavigationProvider } from '../contexts/NavigationContext';
 
 const Index = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -67,24 +68,26 @@ const Index = () => {
 
   return (
     <RouteProvider>
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex flex-col">
-        <Header />
-        <OfflineIndicator isOnline={isOnline} />
-        
-        <div className="flex-1 flex flex-col lg:flex-row">
-          <NavigationPanel isOnline={isOnline} />
-          <div className="flex-1 relative">
-            <MapContainer isOnline={isOnline} />
+      <NavigationProvider>
+        <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex flex-col">
+          <Header />
+          <OfflineIndicator isOnline={isOnline} />
+          
+          <div className="flex-1 flex flex-col lg:flex-row">
+            <MainNavigationPanel isOnline={isOnline} />
+            <div className="flex-1 relative">
+              <MapContainer isOnline={isOnline} />
+            </div>
           </div>
+          
+          {/* Service Worker Status Indicator */}
+          {!serviceWorkerReady && (
+            <div className="fixed bottom-4 right-4 bg-blue-100 text-blue-800 px-3 py-2 rounded-lg text-sm">
+              Loading offline features...
+            </div>
+          )}
         </div>
-        
-        {/* Service Worker Status Indicator */}
-        {!serviceWorkerReady && (
-          <div className="fixed bottom-4 right-4 bg-blue-100 text-blue-800 px-3 py-2 rounded-lg text-sm">
-            Loading offline features...
-          </div>
-        )}
-      </div>
+      </NavigationProvider>
     </RouteProvider>
   );
 };
