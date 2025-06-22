@@ -21,8 +21,8 @@ const Index = () => {
           // Cache current page and assets
           const urlsToCache = [
             window.location.href,
-            ...Array.from(document.querySelectorAll('script[src]')).map(script => script.src),
-            ...Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(link => link.href)
+            ...Array.from(document.querySelectorAll('script[src]')).map(script => (script as HTMLScriptElement).src),
+            ...Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(link => (link as HTMLLinkElement).href)
           ];
           
           if (registration.active) {
