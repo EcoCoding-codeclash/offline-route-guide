@@ -1,7 +1,7 @@
 
-const CACHE_NAME = 'ecomap-v2';
-const OFFLINE_CACHE = 'ecomap-offline-v2';
-const ROUTES_CACHE = 'ecomap-routes-v1';
+const CACHE_NAME = 'ecomap-v3';
+const OFFLINE_CACHE = 'ecomap-offline-v3';
+const ROUTES_CACHE = 'ecomap-routes-v2';
 
 // Cache essential files for offline functionality
 const urlsToCache = [
@@ -47,27 +47,59 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Handle app shell (HTML, CSS, JS) - Cache First
-  if (request.destination === 'document' || 
-      request.destination === 'script' || 
-      request.destination === 'style') {
+  // Handle navigation requests (HTML pages) - Cache First with Network Fallback
+  if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match(request)
+      caches.match('/')
         .then((cachedResponse) => {
           if (cachedResponse) {
+            console.log('Serving cached HTML');
             return cachedResponse;
           }
           return fetch(request).then((response) => {
+            console.log('Fetching and caching HTML');
             const responseClone = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
+              cache.put('/', responseClone);
             });
             return response;
           });
         })
         .catch(() => {
-          // Return offline page or cached version
+          console.log('Serving fallback HTML');
           return caches.match('/');
+        })
+    );
+    return;
+  }
+
+  // Handle app assets (JS, CSS) - Cache First
+  if (request.destination === 'script' || 
+      request.destination === 'style' ||
+      url.pathname.includes('/assets/') ||
+      url.pathname.includes('.js') ||
+      url.pathname.includes('.css')) {
+    event.respondWith(
+      caches.match(request)
+        .then((cachedResponse) => {
+          if (cachedResponse) {
+            console.log('Serving cached asset:', url.pathname);
+            return cachedResponse;
+          }
+          return fetch(request).then((response) => {
+            console.log('Fetching and caching asset:', url.pathname);
+            if (response.status === 200) {
+              const responseClone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(request, responseClone);
+              });
+            }
+            return response;
+          });
+        })
+        .catch(() => {
+          console.log('Asset not available offline:', url.pathname);
+          return new Response('Not available offline', { status: 503 });
         })
     );
     return;
@@ -117,8 +149,37 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Default: Network First
+  // Default: Network First with Cache Fallback
   event.respondWith(
-    fetch(request).catch(() => caches.match(request))
+    fetch(request)
+      .then((response) => {
+        // Cache successful responses for static assets
+        if (response.status === 200 && (
+          request.destination === 'image' ||
+          request.destination === 'font' ||
+          request.destination === 'manifest'
+        )) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        return caches.match(request);
+      })
   );
+});
+
+// Add message listener to handle dynamic caching
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CACHE_URLS') {
+    const urlsToCache = event.data.urls;
+    event.waitUntil(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.addAll(urlsToCache);
+      })
+    );
+  }
 });
